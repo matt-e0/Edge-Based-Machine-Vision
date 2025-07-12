@@ -4,9 +4,8 @@
 #include <ArduCAM.h>
 #include <memorysaver.h>
 
-// Enable OV2640 in memorysaver.h
 #if !(defined (OV2640_MINI_2MP_PLUS))
-#error Please enable OV2640_MINI_2MP_PLUS in memorysaver.h
+#error Enable OV2640_MINI_2MP_PLUS in memorysaver.h
 #endif
 
 #define CS_PIN 10
@@ -20,7 +19,7 @@ void setup() {
   Wire.begin();
   Serial.begin(115200);
   delay(1000);
-  Serial.println("ArduCAM Start!");
+  Serial.println("Camera start");
 
   pinMode(CS_PIN, OUTPUT);
   digitalWrite(CS_PIN, HIGH);
@@ -59,9 +58,9 @@ void setup() {
   }
 
   // Initialize camera
-  myCAM.set_format(JPEG);
+  myCAM.set_format(BMP);
   myCAM.InitCAM();
-  myCAM.OV2640_set_JPEG_size(OV2640_640x480);
+  myCAM.OV2640_set_JPEG_size(OV2640_160x120);
   delay(1000);
 }
 
@@ -101,12 +100,20 @@ void loop() {
   uint8_t buf[chunkSize];
   uint32_t bytes_read = 0;
 
+  const uint8_t START_MARKER[] = { 0xAA, 0x55, 0xAA, 0x55 };
+  const uint8_t END_MARKER[]   = { 0x55, 0xAA, 0x55, 0xAA };
+
+  // After capture:
+  Serial.write(START_MARKER, sizeof(START_MARKER));
+
   while (bytes_read < length) {
     size_t bytes_to_read = min(chunkSize, length - bytes_read);
     SPI.transfer(buf, bytes_to_read);
     Serial.write(buf, bytes_to_read);
     bytes_read += bytes_to_read;
   }
+
+  Serial.write(END_MARKER, sizeof(END_MARKER));
 
   myCAM.CS_HIGH();
   Serial.println("\nImage sent!");
