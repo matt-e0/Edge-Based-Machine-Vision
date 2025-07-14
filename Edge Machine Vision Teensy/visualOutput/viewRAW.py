@@ -3,9 +3,7 @@ from PIL import Image
 WIDTH = 160
 HEIGHT = 120
 
-def printing(filename):
-    with open(filename, "rb") as f:
-        raw = f.read()
+def printing(raw):
 
     # Convert RGB565 to RGB888
     def rgb565_to_rgb888(raw):
@@ -23,12 +21,13 @@ def printing(filename):
         return bytes(rgb_data)
 
 
-    rgb888 = rgb565_to_rgb888(raw)
+    #rgb888 = rgb565_to_rgb888(raw)
+    rgb888 = raw
 
     print(f"Expected size: {WIDTH * HEIGHT * 3}")
     print(f"Actual rgb888 size: {len(rgb888)}") # 54540 bytes
 
     img = Image.frombytes("RGB", (WIDTH, HEIGHT), rgb888)
-    img.save(str(filename)+ ".png")
+    img.save(str("test")+ ".png")
     img.show()
 

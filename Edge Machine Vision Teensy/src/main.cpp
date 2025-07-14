@@ -50,65 +50,61 @@ void captureFrameWithThreshold() {
   myCAM.start_capture();
   Serial.println("Capturing...");
 
-  while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK));
+  // Wait until capture is done
+  uint32_t startTime = millis();
+  while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK)) {
+    if (millis() - startTime > 2000) {
+      Serial.println("Capture timeout.");
+      return;
+    }
+  }
 
   Serial.println("Capture done!");
 
-  // Read image length
+  // Get image length
   uint32_t length = myCAM.read_fifo_length();
-  if (length >= 0x7FFFFF) {
-    Serial.println("Image too large.");
+  const uint32_t expectedLength = (pixelWidth * pixelHeight * 2) + 8;
+
+  if (length != expectedLength) {
+    Serial.print("Unexpected image length: ");
+    Serial.println(length);
     return;
   }
 
-  if (length == 0) {
-    Serial.println("No image captured.");
-    return;
-  }
-
-  Serial.print("Image length: ");
-  Serial.println(length);
-  Serial.println("Sending image:");
+  // Allocate buffer for image
+  uint8_t imageBuf[expectedLength];
 
   myCAM.CS_LOW();
   myCAM.set_fifo_burst();
 
+  // Read entire image to buffer
+  for (uint32_t i = 0; i < expectedLength; i++) {
+    imageBuf[i] = SPI.transfer(0x00);
+  }
+
+  myCAM.CS_HIGH();
+
+  // Process thresholding from buffer
   for (int y = 0; y < pixelHeight; y++) {
     for (int x = 0; x < pixelWidth; x++) {
-      uint8_t high = SPI.transfer(0x00);
-      uint8_t low = SPI.transfer(0x00);
-      uint16_t pixel565 = (high << 8) | low;
-
+      size_t index = (y * pixelWidth + x) * 2;
+      uint16_t pixel565 = (imageBuf[index] << 8) | imageBuf[index + 1];
       mask[y][x] = isTargetColour(pixel565) ? 1 : 0;
     }
   }
 
-  const size_t chunkSize = 4096;
-  uint8_t buf[chunkSize];
-  uint32_t bytes_read = 0;
-
+  // Send frame over serial
   const uint8_t START_MARKER[] = { 0xAA, 0x55, 0xAA, 0x55 };
   const uint8_t END_MARKER[]   = { 0x55, 0xAA, 0x55, 0xAA };
 
-  // After capture:
   Serial.write(START_MARKER, sizeof(START_MARKER));
-
-  while (bytes_read < length) {
-    size_t bytes_to_read = min(chunkSize, length - bytes_read);
-    SPI.transfer(buf, bytes_to_read);
-    Serial.write(buf, bytes_to_read);
-    bytes_read += bytes_to_read;
-  }
-
+  Serial.write(imageBuf, expectedLength);
   Serial.write(END_MARKER, sizeof(END_MARKER));
 
-  myCAM.CS_HIGH();
   Serial.println("\nImage sent!");
-
-  printMask(mask);
-  
-  delay(10000); // Wait 5 seconds between captures
+  delay(500); // Delay between frames
 }
+
 
 void setup() {
   uint8_t vid, pid;
@@ -159,9 +155,12 @@ void setup() {
   myCAM.set_format(BMP);
   myCAM.InitCAM();
   myCAM.OV2640_set_JPEG_size(OV2640_160x120);
+  myCAM.clear_fifo_flag();
+
   delay(1000);
 }
 
 void loop() {
   captureFrameWithThreshold();
+  delay(10);
 }
