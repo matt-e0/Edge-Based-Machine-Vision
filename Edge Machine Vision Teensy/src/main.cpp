@@ -14,6 +14,8 @@
 ArduCAM myCAM(OV2640, CS_PIN);
 constexpr uint8_t pixelWidth = 160;
 constexpr uint8_t pixelHeight = 120;
+uint8_t mask[pixelHeight][pixelWidth];
+const size_t chunkSize = 512;
 
 void printMask(uint8_t mask[pixelHeight][pixelWidth]) {
   for (int i = 0; i < pixelHeight; i++) {
@@ -43,8 +45,6 @@ bool isTargetColour(uint16_t rgb565) {
 }
 
 void captureFrameWithThreshold() {
-  uint8_t mask[pixelHeight][pixelWidth];
-
   myCAM.flush_fifo();
   myCAM.clear_fifo_flag();
   myCAM.start_capture();
@@ -72,37 +72,39 @@ void captureFrameWithThreshold() {
   }
 
   // Allocate buffer for image
-  uint8_t imageBuf[expectedLength];
-
   myCAM.CS_LOW();
   myCAM.set_fifo_burst();
 
-  // Read entire image to buffer
-  for (uint32_t i = 0; i < expectedLength; i++) {
-    imageBuf[i] = SPI.transfer(0x00);
-  }
-
-  myCAM.CS_HIGH();
-
-  // Process thresholding from buffer
-  for (int y = 0; y < pixelHeight; y++) {
-    for (int x = 0; x < pixelWidth; x++) {
-      size_t index = (y * pixelWidth + x) * 2;
-      uint16_t pixel565 = (imageBuf[index] << 8) | imageBuf[index + 1];
-      mask[y][x] = isTargetColour(pixel565) ? 1 : 0;
-    }
-  }
-
-  // Send frame over serial
   const uint8_t START_MARKER[] = { 0xAA, 0x55, 0xAA, 0x55 };
   const uint8_t END_MARKER[]   = { 0x55, 0xAA, 0x55, 0xAA };
 
   Serial.write(START_MARKER, sizeof(START_MARKER));
-  Serial.write(imageBuf, expectedLength);
+
+  // Read, threshold, and send
+  for (int y = 0; y < pixelHeight; y++) {
+    for (int x = 0; x < pixelWidth; x++) {
+      uint8_t high = SPI.transfer(0x00);
+      uint8_t low = SPI.transfer(0x00);
+      uint16_t pixel565 = (high << 8) | low;
+
+      // Apply your thresholding
+      mask[y][x] = isTargetColour(pixel565) ? 1 : 0;
+
+      // Send pixel directly over serial
+      Serial.write(high);
+      Serial.write(low);
+
+      // Optional: wait for serial buffer space
+      while (Serial.availableForWrite() < 2) yield();
+    }
+  }
+
   Serial.write(END_MARKER, sizeof(END_MARKER));
+  myCAM.CS_HIGH();
 
   Serial.println("\nImage sent!");
-  delay(100); // Delay between frames
+  yield();
+  delay(42);  // Optional pacing
 }
 
 
@@ -162,5 +164,4 @@ void setup() {
 
 void loop() {
   captureFrameWithThreshold();
-  delay(10);
 }
