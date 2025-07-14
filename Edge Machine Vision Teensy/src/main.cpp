@@ -102,7 +102,7 @@ void captureFrameWithThreshold() {
   Serial.write(END_MARKER, sizeof(END_MARKER));
 
   Serial.println("\nImage sent!");
-  delay(500); // Delay between frames
+  delay(100); // Delay between frames
 }
 
 
@@ -111,7 +111,7 @@ void setup() {
   uint8_t temp;
 
   Wire.begin();
-  Serial.begin(115200);
+  Serial.begin(921600);
   delay(1000);
   Serial.println("Camera start");
 

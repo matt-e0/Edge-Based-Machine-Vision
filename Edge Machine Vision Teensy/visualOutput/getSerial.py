@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 PORT = 'COM3'
-BAUD = 115200
+BAUD = 921600 
 START_MARKER = b'\xAA\x55\xAA\x55'
 END_MARKER = b'\x55\xAA\x55\xAA'
 WIDTH = 160
@@ -33,7 +33,8 @@ def read_frame(ser):
     print("Waiting for frame...")
     buffer = b''
     while True:
-        chunk = ser.read(1024)
+        #chunk = ser.read(1024)
+        chunk = ser.read(ser.in_waiting or 1)  # Read what's available
         if not chunk:
             continue
         buffer += chunk
@@ -80,7 +81,8 @@ def main():
 
             # Convert list of tuples to NumPy array
             frame_array = np.array(frame_rgb888, dtype=np.uint8).reshape((HEIGHT, WIDTH, 3))
-            cv2.imshow('Live Frame', frame_array)
+            scaled_frame = cv2.resize(frame_array, (0, 0), fx=2.0, fy=2.0)  
+            cv2.imshow('Live Frame', scaled_frame)
             #viewRAW.printing(frame_rgb888)
 
             # Exit on ESC key
