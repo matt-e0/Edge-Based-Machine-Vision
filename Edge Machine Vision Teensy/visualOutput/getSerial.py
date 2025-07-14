@@ -17,7 +17,7 @@ def rgb565_to_rgb888(rgb565_bytes):
     if len(rgb565_bytes) != 2:
         raise ValueError("Input must be exactly 2 bytes")
 
-    value = (rgb565_bytes[0] << 8) | rgb565_bytes[1]
+    value = (rgb565_bytes[1] << 8) | rgb565_bytes[0]
 
     r = (value >> 11) & 0x1F
     g = (value >> 5) & 0x3F
@@ -81,7 +81,8 @@ def main():
 
             # Convert list of tuples to NumPy array
             frame_array = np.array(frame_rgb888, dtype=np.uint8).reshape((HEIGHT, WIDTH, 3))
-            scaled_frame = cv2.resize(frame_array, (0, 0), fx=2.0, fy=2.0)  
+            frame_array_bgr = frame_array[..., ::-1]  # RGB to BGR
+            scaled_frame = cv2.resize(frame_array_bgr, (0, 0), fx=4.0, fy=4.0)  
             cv2.imshow('Live Frame', scaled_frame)
             #viewRAW.printing(frame_rgb888)
 

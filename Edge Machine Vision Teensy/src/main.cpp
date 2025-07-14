@@ -14,16 +14,42 @@
 ArduCAM myCAM(OV2640, CS_PIN);
 constexpr uint8_t pixelWidth = 160;
 constexpr uint8_t pixelHeight = 120;
-uint8_t mask[pixelHeight][pixelWidth];
-const size_t chunkSize = 512;
 
-void printMask(uint8_t mask[pixelHeight][pixelWidth]) {
-  for (int i = 0; i < pixelHeight; i++) {
-    String line = "";
-    for (int j = 0; j < pixelWidth; j++) {
-      line += String(mask[i][j]);
+constexpr int bitmaskSize = (pixelWidth * pixelHeight + 7) / 8;
+uint8_t mask[bitmaskSize]; // 1D bit array
+
+const uint8_t START_MARKER[] = { 0xAA, 0x55, 0xAA, 0x55 };
+const uint8_t END_MARKER[]   = { 0x55, 0xAA, 0x55, 0xAA };
+
+const size_t chunkSize = 64; // HID
+uint8_t sendBuffer[chunkSize];
+size_t bufIndex = 0;
+bool serialOut = false;
+
+inline void setPixelMask(int x, int y, bool value) {
+  int bitIndex = y * pixelWidth + x;
+  int byteIndex = bitIndex / 8;
+  int bitOffset = bitIndex % 8;
+
+  if (value)
+    mask[byteIndex] |= (1 << bitOffset);
+  else
+    mask[byteIndex] &= ~(1 << bitOffset);
+}
+
+inline bool getPixelMask(int x, int y) {
+  int bitIndex = y * pixelWidth + x;
+  int byteIndex = bitIndex / 8;
+  int bitOffset = bitIndex % 8;
+  return (mask[byteIndex] >> bitOffset) & 1;
+}
+
+void printMask() {
+  for (int y = 0; y < pixelHeight; y++) {
+    for (int x = 0; x < pixelWidth; x++) {
+      Serial.print(getPixelMask(x, y) ? "1" : "0");
     }
-    Serial.println(line);
+    Serial.println();
   }
 }
 
@@ -32,19 +58,71 @@ bool isTargetColour(uint16_t rgb565) {
   uint8_t g = (rgb565 >> 5) & 0x3F;
   uint8_t b = rgb565 & 0x1F;
 
-  // Convert to 8-bit scale (approximate)
   r = (r * 255) / 31;
   g = (g * 255) / 63;
   b = (b * 255) / 31;
 
-  // Define a loose threshold around your red target (e.g. #bd1020)
-  if (r > 150 && r < 220 && g < 50 && b < 60) {
+  if (r > 100 && r < 255 && g < 100 && b < 100) {
     return true;
   }
   return false;
 }
 
+void sendRGB565() {
+  if (serialOut) {
+    while (Serial.availableForWrite() < 2) yield();
+    Serial.write(START_MARKER, sizeof(START_MARKER));
+  }
+
+  // Read, threshold, and send
+  for (int y = 0; y < pixelHeight; y++) {
+    for (int x = 0; x < pixelWidth; x++) {
+      uint8_t high = SPI.transfer(0x00);
+      uint8_t low = SPI.transfer(0x00);
+      uint16_t pixel565 = (high << 8) | low;
+      // Apply your thresholding
+      setPixelMask(x, y, isTargetColour(pixel565));
+
+      if (serialOut) {
+        sendBuffer[bufIndex++] = low;
+        sendBuffer[bufIndex++] = high;
+
+        if (bufIndex >= chunkSize) {
+          while (Serial.availableForWrite() < bufIndex) yield();
+          Serial.write(sendBuffer, bufIndex);
+          bufIndex = 0;
+        }
+        // Send pixel directly over serial
+        //while (Serial.availableForWrite() < 2) yield(); //Back pressure checking for serial
+        //Serial.write(low);
+        //while (Serial.availableForWrite() < 2) yield(); //Back pressure checking for serial
+        //Serial.write(high);
+      }
+
+    }
+  }
+
+  if (bufIndex > 0 && serialOut) {
+    while (Serial.availableForWrite() < bufIndex) yield();
+    Serial.write(sendBuffer, bufIndex);
+  }
+
+  if (serialOut) {
+    while (Serial.availableForWrite() < 2) yield();
+    Serial.write(END_MARKER, sizeof(END_MARKER));
+  }
+  
+  myCAM.CS_HIGH();
+  Serial.flush();  // Waits until all data is sent
+
+  Serial.println("\nImage sent!");
+  yield();
+}
+
+
 void captureFrameWithThreshold() {
+
+  while (Serial.availableForWrite() < 2) yield();
   myCAM.flush_fifo();
   myCAM.clear_fifo_flag();
   myCAM.start_capture();
@@ -75,36 +153,9 @@ void captureFrameWithThreshold() {
   myCAM.CS_LOW();
   myCAM.set_fifo_burst();
 
-  const uint8_t START_MARKER[] = { 0xAA, 0x55, 0xAA, 0x55 };
-  const uint8_t END_MARKER[]   = { 0x55, 0xAA, 0x55, 0xAA };
-
-  Serial.write(START_MARKER, sizeof(START_MARKER));
-
-  // Read, threshold, and send
-  for (int y = 0; y < pixelHeight; y++) {
-    for (int x = 0; x < pixelWidth; x++) {
-      uint8_t high = SPI.transfer(0x00);
-      uint8_t low = SPI.transfer(0x00);
-      uint16_t pixel565 = (high << 8) | low;
-
-      // Apply your thresholding
-      mask[y][x] = isTargetColour(pixel565) ? 1 : 0;
-
-      // Send pixel directly over serial
-      Serial.write(high);
-      Serial.write(low);
-
-      // Optional: wait for serial buffer space
-      while (Serial.availableForWrite() < 2) yield();
-    }
-  }
-
-  Serial.write(END_MARKER, sizeof(END_MARKER));
-  myCAM.CS_HIGH();
-
-  Serial.println("\nImage sent!");
-  yield();
-  delay(42);  // Optional pacing
+  sendRGB565();
+  printMask();
+  delay(50);  // Optional pacing
 }
 
 
@@ -114,14 +165,15 @@ void setup() {
 
   Wire.begin();
   Serial.begin(921600);
-  delay(1000);
+  delay(100);
+  
   Serial.println("Camera start");
 
   pinMode(CS_PIN, OUTPUT);
   digitalWrite(CS_PIN, HIGH);
 
   SPI.begin();
-  delay(1000);
+  delay(50);
 
   // Reset camera
   myCAM.write_reg(0x07, 0x80);
@@ -135,7 +187,7 @@ void setup() {
     temp = myCAM.read_reg(ARDUCHIP_TEST1);
     if (temp == 0x55) break;
     Serial.println("SPI interface error");
-    delay(1000);
+    delay(100);
   }
 
   // Check if the camera module type is OV2640
@@ -159,9 +211,10 @@ void setup() {
   myCAM.OV2640_set_JPEG_size(OV2640_160x120);
   myCAM.clear_fifo_flag();
 
-  delay(1000);
+  delay(50);
 }
 
 void loop() {
   captureFrameWithThreshold();
+  //Trajectory predicition?
 }
