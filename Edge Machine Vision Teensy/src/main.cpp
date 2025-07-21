@@ -4,6 +4,7 @@
 #include <SPI.h>
 #include <ArduCAM.h>
 #include <memorysaver.h>
+#include <blobDetection.h>
 
 #if !(defined (OV2640_MINI_2MP_PLUS))
 #error Enable OV2640_MINI_2MP_PLUS in memorysaver.h
