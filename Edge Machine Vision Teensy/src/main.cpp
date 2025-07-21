@@ -18,10 +18,10 @@ constexpr uint8_t pixelHeight = 120;
 constexpr int bitmaskSize = (pixelWidth * pixelHeight + 7) / 8;
 uint8_t mask[bitmaskSize]; // 1D bit array
 
-const uint8_t START_MARKER[] = { 0xAA, 0x55, 0xAA, 0x55 };
-const uint8_t END_MARKER[]   = { 0x55, 0xAA, 0x55, 0xAA };
+const uint8_t startByte[] = { 0xAA, 0x55, 0xAA, 0x55 };
+const uint8_t endByte[]   = { 0x55, 0xAA, 0x55, 0xAA };
 
-const size_t chunkSize = 64; // HID
+const size_t chunkSize = 64; 
 uint8_t sendBuffer[chunkSize];
 size_t bufIndex = 0;
 bool serialOut = false;
@@ -71,7 +71,7 @@ bool isTargetColour(uint16_t rgb565) {
 void sendRGB565() {
   if (serialOut) {
     while (Serial.availableForWrite() < 2) yield();
-    Serial.write(START_MARKER, sizeof(START_MARKER));
+    Serial.write(startByte, sizeof(startByte));
   }
 
   // Read, threshold, and send
@@ -80,7 +80,7 @@ void sendRGB565() {
       uint8_t high = SPI.transfer(0x00);
       uint8_t low = SPI.transfer(0x00);
       uint16_t pixel565 = (high << 8) | low;
-      // Apply your thresholding
+
       setPixelMask(x, y, isTargetColour(pixel565));
 
       if (serialOut) {
@@ -92,11 +92,6 @@ void sendRGB565() {
           Serial.write(sendBuffer, bufIndex);
           bufIndex = 0;
         }
-        // Send pixel directly over serial
-        //while (Serial.availableForWrite() < 2) yield(); //Back pressure checking for serial
-        //Serial.write(low);
-        //while (Serial.availableForWrite() < 2) yield(); //Back pressure checking for serial
-        //Serial.write(high);
       }
 
     }
@@ -109,7 +104,7 @@ void sendRGB565() {
 
   if (serialOut) {
     while (Serial.availableForWrite() < 2) yield();
-    Serial.write(END_MARKER, sizeof(END_MARKER));
+    Serial.write(endByte, sizeof(endByte));
   }
   
   myCAM.CS_HIGH();
@@ -139,7 +134,6 @@ void captureFrameWithThreshold() {
 
   Serial.println("Capture done!");
 
-  // Get image length
   uint32_t length = myCAM.read_fifo_length();
   const uint32_t expectedLength = (pixelWidth * pixelHeight * 2) + 8;
 
@@ -149,7 +143,6 @@ void captureFrameWithThreshold() {
     return;
   }
 
-  // Allocate buffer for image
   myCAM.CS_LOW();
   myCAM.set_fifo_burst();
 
@@ -216,5 +209,4 @@ void setup() {
 
 void loop() {
   captureFrameWithThreshold();
-  //Trajectory predicition?
 }

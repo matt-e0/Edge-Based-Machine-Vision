@@ -1,6 +1,4 @@
 import serial
-import time
-import viewRAW
 import cv2
 import numpy as np
 
@@ -19,6 +17,12 @@ def rgb565_to_rgb888(rgb565_bytes):
 
     value = (rgb565_bytes[1] << 8) | rgb565_bytes[0]
 
+
+    # rg565 bytes
+    #   r      g     b
+    # 11111 000000 00000
+
+    # Bit shift to get value for each colour
     r = (value >> 11) & 0x1F
     g = (value >> 5) & 0x3F
     b = value & 0x1F
@@ -33,7 +37,6 @@ def read_frame(ser):
     print("Waiting for frame...")
     buffer = b''
     while True:
-        #chunk = ser.read(1024)
         chunk = ser.read(ser.in_waiting or 1)  # Read what's available
         if not chunk:
             continue
@@ -48,7 +51,7 @@ def read_frame(ser):
                 buffer = buffer[end_index + len(END_MARKER):]  # Drop garbage
                 continue
 
-            frame_data = buffer[start_index + len(START_MARKER):end_index]
+            frame_data = buffer[start_index + len(START_MARKER):end_index] # Trim markers
 
             # Clean up buffer to remove used data
             buffer = buffer[end_index + len(END_MARKER):]
@@ -84,7 +87,6 @@ def main():
             frame_array_bgr = frame_array[..., ::-1]  # RGB to BGR
             scaled_frame = cv2.resize(frame_array_bgr, (0, 0), fx=4.0, fy=4.0)  
             cv2.imshow('Live Frame', scaled_frame)
-            #viewRAW.printing(frame_rgb888)
 
             # Exit on ESC key
             if cv2.waitKey(1) & 0xFF == 27:

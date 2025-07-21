@@ -2,8 +2,8 @@ import serial
 import pygame
 import sys
 
-# Adjust these for your setup
-SERIAL_PORT = 'COM3'  # e.g. '/dev/ttyUSB0' on Linux or 'COM3' on Windows
+
+SERIAL_PORT = 'COM3'
 BAUD_RATE = 921600
 
 WIDTH, HEIGHT = 160, 120
@@ -22,7 +22,7 @@ def main():
 
     print(f"Listening on {SERIAL_PORT} at {BAUD_RATE} baud...")
 
-    # Buffer to store mask rows
+    # Buffer to store mask
     mask_lines = []
 
     running = True
@@ -41,7 +41,7 @@ def main():
             continue
 
         # Check if line length matches the mask width
-        if len(line) == WIDTH and all(c in '01' for c in line):
+        if len(line) == WIDTH and all(c in '01' for c in line): # Check bitstream is 0,1s
             mask_lines.append(line)
 
             # When we get full frame, draw it
