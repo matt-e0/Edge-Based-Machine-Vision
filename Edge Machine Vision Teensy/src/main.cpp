@@ -62,7 +62,7 @@ bool isTargetColour(uint16_t rgb565) {
   g = (g * 255) / 63;
   b = (b * 255) / 31;
 
-  if (r > 100 && r < 255 && g < 100 && b < 100) {
+  if (r > 100 && r < 255 && g < 50 && b < 50) {
     return true;
   }
   return false;
