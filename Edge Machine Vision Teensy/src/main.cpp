@@ -32,7 +32,18 @@ TrackerState tracker;
 
 Servo SERVOH;
 Servo SERVOV;
-float Kp = 0.05;
+
+// Adjustable parameters
+const int centerX = pixelWidth / 2;
+const int centerY = pixelHeight / 2;
+const int deadzone = 5;    // pixels before servo moves
+const float Kp = 0.3;      // gain factor
+const bool invertX = true; // flip horizontal direction
+const bool invertY = false; // flip vertical direction
+
+// Static variables to keep servo positions between calls
+static int servoHPos = 90;
+static int servoVPos = 90;
 
 inline void setPixelMask(int x, int y, bool value) {
   int bitIndex = y * pixelWidth + x;
@@ -59,18 +70,26 @@ int persistanceFrames = 3;
 
 // FIX
 void trackServo(Pixel p) {
-  if(p.x >= 0 && p.y >= 0) {
-    int errorX = p.x - (pixelWidth/2);
-    int errorY = p.y - (pixelHeight/2);
+  if (p.x >= 0 && p.y >= 0) {
+      int errorX = p.x - centerX;
+      int errorY = p.y - centerY;
 
-    if(errorX > 5 || errorX < -5) {
-      SERVOH.write(constrain(90 + errorX * Kp, 0, 180));
-    }
+      if (invertX) errorX = -errorX;
+      if (invertY) errorY = -errorY;
 
-    if(errorY > 5 || errorY < -5) {
-      SERVOV.write(constrain(90 + errorY * Kp, 0, 180));
+      // Move only if error is outside deadzone
+      if (abs(errorX) > deadzone) {
+          servoHPos += errorX * Kp;
+          servoHPos = constrain(servoHPos, 0, 180);
+          SERVOH.write(servoHPos);
+      }
+
+      if (abs(errorY) > deadzone) {
+          servoVPos += errorY * Kp;
+          servoVPos = constrain(servoVPos, 0, 180);
+          SERVOV.write(servoVPos);
+      }
     }
-  }
 }
 
 
@@ -92,7 +111,9 @@ bool isTargetColour(uint16_t rgb565) {
   g = (g * 255) / 63;
   b = (b * 255) / 31;
 
-  if (r < 50 && g < 100 && b < 255 && b < 100) {
+  if ((r >100 && r < 255) &&
+      (g > 0 && g < 30) &&
+      (b > 0 && b < 30)) {
     return true;
   }
   return false;
@@ -135,18 +156,11 @@ void sendRGB565() {
   if (serialOut) {
     while (Serial.availableForWrite() < 2) yield();
     Serial.write(endByte, sizeof(endByte));
+    Serial.flush();  // Waits until all data is sent
   }
-
-  Pixel p = trackBlob(blobs, blobThreshold, tracker);
-  yield();
-  trackServo(p);
-  Serial.print("X:");
-  Serial.print(p.x);
-  Serial.print(" Y:");
-  Serial.println(p.y);
   
   myCAM.CS_HIGH();
-  Serial.flush();  // Waits until all data is sent
+  
 
   Serial.println("\nImage sent!");
   yield();
@@ -185,7 +199,7 @@ void captureFrameWithThreshold() {
   myCAM.set_fifo_burst();
 
   sendRGB565();
-  //printMask();
+  printMask();
   delay(50);  // Optional pacing
 }
 
@@ -249,7 +263,8 @@ void setup() {
 }
 
 void loop() {
-    if (!targetSet) {
+  //delay(2000);
+  if (!targetSet) {
         captureFrameWithThreshold();
         detectBlobs(pixelHeight, pixelWidth, mask, blobs);
         setCurrentTarget(blobs, targetSet, tracker);
@@ -264,6 +279,11 @@ void loop() {
 
         Pixel p = trackBlob(blobs, blobThreshold, tracker);
 
+        Serial.print("X:");
+        Serial.print(p.x);
+        Serial.print(" Y:");
+        Serial.println(p.y);
+
         if (p.x == -1 && p.y == -1) {
             persistanceFrames--;
             if (persistanceFrames > 0) {
@@ -275,6 +295,8 @@ void loop() {
             }
         } 
         else {
+            yield();
+            trackServo(p);
             persistanceFrames = 3; // Reset if tracking successful
         }
     }

@@ -76,9 +76,8 @@ def read_frame(ser):
 
     return frame_rgb888
 
-
 def main():
-    with serial.Serial(PORT, BAUD, timeout=10) as ser:
+    with serial.Serial(PORT, BAUD, timeout=5) as ser:
         while True:
             frame_rgb888 = read_frame(ser)
             if frame_rgb888 is None:

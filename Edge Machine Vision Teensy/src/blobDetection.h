@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <vector>
 
+
 extern int blobThreshold; // Maximum deviation for blob tracking (pixels)
 
 struct Blob {

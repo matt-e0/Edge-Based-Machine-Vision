@@ -1,72 +1,95 @@
 #include "blobDetection.h"
 #include <stdint.h>
 #include <cmath>
+#include <algorithm>
 // PLAN
 /*
 Check through each pixel in the mask to see if has been assigned to a blob
 if not perform a BFS O(N) instead of checking every pixel again O(n^2)
 */
 
-/*
-Target identification can initialy be achieved through a "roundness" check or
-checking motion compared to other blobs. The most ciritical check to determine if
-it is the target blob will be the deviation of the centroid per frame.
-*/
-
-/*
-Consider lock, predictive tracking and persistance of tracking when lock is lost
-*/
 
 int lastCentroidX = -1;
 int lastCentroidY = -1;
 int tempID = 0;
-int lastPixelCount = 0;
-int pixelCountThreshold = 20;
 float circleThreshold = 10;
 int blobThreshold = 15;
 
-
+/*
 Pixel trackBlob(const std::vector<Blob> &blobs, int blobThreshold, TrackerState &state) {
     for (const Blob &target : blobs) {
         // Size match check
-        if (target.pixelCount > state.lastPixelCount - pixelCountThreshold &&
-            target.pixelCount < state.lastPixelCount + pixelCountThreshold) {
+        int currentX = std::round(target.centreX);
+        int currentY = std::round(target.centreY);
 
-            int currentX = std::round(target.centreX);
-            int currentY = std::round(target.centreY);
+        // Position match check
+        if (currentX > state.lastCentroidX - blobThreshold &&
+            currentX < state.lastCentroidX + blobThreshold &&
+            currentY > state.lastCentroidY - blobThreshold &&
+            currentY < state.lastCentroidY + blobThreshold) {
 
-            // Position match check
-            if (currentX > state.lastCentroidX - blobThreshold &&
-                currentX < state.lastCentroidX + blobThreshold &&
-                currentY > state.lastCentroidY - blobThreshold &&
-                currentY < state.lastCentroidY + blobThreshold) {
-
-                // Update tracker state
-                state.lastCentroidX = currentX;
-                state.lastCentroidY = currentY;
-                state.lastPixelCount = target.pixelCount;
-                return { currentX, currentY };
-            }
+            // Update tracker state
+            state.lastCentroidX = currentX;
+            state.lastCentroidY = currentY;
+            //state.lastPixelCount = target.pixelCount;
+            return { currentX, currentY };
         }
+    
     }
 
     // If no match, clear tracking
     state.lastCentroidX = -1;
     state.lastCentroidY = -1;
-    state.lastPixelCount = 0;
+    //state.lastPixelCount = 0;
+    return { -1, -1 };
+}
+*/
+
+Pixel trackBlob(const std::vector<Blob> &blobs, int blobThreshold, TrackerState &state) {
+    if (!blobs.empty()) {
+        // Try to match the last position first
+        for (const Blob &target : blobs) {
+            int currentX = std::round(target.centreX);
+            int currentY = std::round(target.centreY);
+
+            if (state.lastCentroidX != -1 && state.lastCentroidY != -1 &&
+                currentX > state.lastCentroidX - blobThreshold &&
+                currentX < state.lastCentroidX + blobThreshold &&
+                currentY > state.lastCentroidY - blobThreshold &&
+                currentY < state.lastCentroidY + blobThreshold) {
+
+                state.lastCentroidX = currentX;
+                state.lastCentroidY = currentY;
+                return { currentX, currentY };
+            }
+        }
+
+        // If no match, reacquire largest blob
+        const Blob &largest = *std::max_element(blobs.begin(), blobs.end(),
+            [](const Blob &a, const Blob &b) {
+                return a.pixelCount < b.pixelCount;
+            });
+        state.lastCentroidX = std::round(largest.centreX);
+        state.lastCentroidY = std::round(largest.centreY);
+        return { state.lastCentroidX, state.lastCentroidY };
+    }
+
+    // No blobs at all
+    state.lastCentroidX = -1;
+    state.lastCentroidY = -1;
     return { -1, -1 };
 }
 
 void setCurrentTarget(std::vector<Blob> &blobs, bool &targetSet, TrackerState &state) {
     targetSet = false;
     for (Blob &target : blobs) {
-        if (target.pixelCount > 12 &&
+        if (target.pixelCount > 3 &&
             target.sumY != 0 && target.sumX != 0 &&
             (float(target.sumX) / target.sumY < circleThreshold) &&
             (float(target.sumY) / target.sumX < circleThreshold)) {
 
             targetSet = true;
-            state.lastPixelCount = target.pixelCount;
+            //state.lastPixelCount = target.pixelCount;
             state.lastCentroidX = std::round(target.centreX);
             state.lastCentroidY = std::round(target.centreY);
             break;
@@ -76,7 +99,7 @@ void setCurrentTarget(std::vector<Blob> &blobs, bool &targetSet, TrackerState &s
 
 
 void detectBlobs(int pixelHeight, int pixelWidth, uint8_t mask[], std::vector<Blob> &blobs) {
-    int persistanceFrames = 3;
+    //int persistanceFrames = 3;
     blobs.clear();
     std::vector<Pixel> queue; // BFS queue
     queue.reserve(pixelWidth * pixelHeight);
