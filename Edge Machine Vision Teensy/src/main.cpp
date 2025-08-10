@@ -22,10 +22,12 @@ uint8_t mask[bitmaskSize]; // 1D bit array
 const uint8_t startByte[] = { 0xAA, 0x55, 0xAA, 0x55 };
 const uint8_t endByte[]   = { 0x55, 0xAA, 0x55, 0xAA };
 
-const size_t chunkSize = 64; 
+const int chunkSize = 64; 
 uint8_t sendBuffer[chunkSize];
-size_t bufIndex = 0;
+int bufIndex = 0;
 bool serialOut = false;
+
+TrackerState tracker;
 
 inline void setPixelMask(int x, int y, bool value) {
   int bitIndex = y * pixelWidth + x;
@@ -37,18 +39,24 @@ inline void setPixelMask(int x, int y, bool value) {
   else
     mask[byteIndex] &= ~(1 << bitOffset);
 }
-
+/*
 inline bool getPixelMask(int x, int y) {
   int bitIndex = y * pixelWidth + x;
   int byteIndex = bitIndex / 8;
   int bitOffset = bitIndex % 8;
   return (mask[byteIndex] >> bitOffset) & 1;
 }
+*/
+
+std::vector<Blob> blobs;
+bool targetSet = false;
+int persistanceFrames = 3;
+
 
 void printMask() {
   for (int y = 0; y < pixelHeight; y++) {
     for (int x = 0; x < pixelWidth; x++) {
-      Serial.print(getPixelMask(x, y) ? "1" : "0");
+      Serial.print(getPixelMask(x, y, mask, pixelWidth) ? "1" : "0");
     }
     Serial.println();
   }
@@ -63,7 +71,7 @@ bool isTargetColour(uint16_t rgb565) {
   g = (g * 255) / 63;
   b = (b * 255) / 31;
 
-  if (r > 100 && r < 255 && g < 50 && b < 50) {
+  if (r > 150 && r < 255 && g > 100 && g < 255 && b < 100) {
     return true;
   }
   return false;
@@ -107,6 +115,12 @@ void sendRGB565() {
     while (Serial.availableForWrite() < 2) yield();
     Serial.write(endByte, sizeof(endByte));
   }
+
+  Pixel p = trackBlob(blobs, blobThreshold, tracker);
+  Serial.print("X:");
+  Serial.print(p.x);
+  Serial.print(" Y:");
+  Serial.println(p.y);
   
   myCAM.CS_HIGH();
   Serial.flush();  // Waits until all data is sent
@@ -148,7 +162,7 @@ void captureFrameWithThreshold() {
   myCAM.set_fifo_burst();
 
   sendRGB565();
-  printMask();
+  //printMask();
   delay(50);  // Optional pacing
 }
 
@@ -192,7 +206,7 @@ void setup() {
   myCAM.wrSensorReg8_8(0xff, 0x01);
   myCAM.rdSensorReg8_8(OV2640_CHIPID_HIGH, &vid);
   myCAM.rdSensorReg8_8(OV2640_CHIPID_LOW, &pid);
-  if ((vid != 0x26) || (pid != 0x42) && (pid != 0x41)) {
+  if ((vid != 0x26) || ((pid != 0x42) && (pid != 0x41))) {
     Serial.println("Can't find OV2640 module!");
     while (1);
   } else {
@@ -209,5 +223,33 @@ void setup() {
 }
 
 void loop() {
-  captureFrameWithThreshold();
+    if (!targetSet) {
+        captureFrameWithThreshold();
+        detectBlobs(pixelHeight, pixelWidth, mask, blobs);
+        setCurrentTarget(blobs, targetSet, tracker);
+
+        if (targetSet) {
+            persistanceFrames = 3;
+        }
+    } 
+    else {
+        captureFrameWithThreshold();
+        detectBlobs(pixelHeight, pixelWidth, mask, blobs);
+
+        Pixel p = trackBlob(blobs, blobThreshold, tracker);
+
+        if (p.x == -1 && p.y == -1) {
+            persistanceFrames--;
+            if (persistanceFrames > 0) {
+                captureFrameWithThreshold();
+                detectBlobs(pixelHeight, pixelWidth, mask, blobs);
+                setCurrentTarget(blobs, targetSet, tracker);
+            } else {
+                targetSet = false;
+            }
+        } 
+        else {
+            persistanceFrames = 3; // Reset if tracking successful
+        }
+    }
 }
