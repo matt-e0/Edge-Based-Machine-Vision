@@ -4,6 +4,7 @@
 #include <SPI.h>
 #include <ArduCAM.h>
 #include <memorysaver.h>
+#include <Servo.h>
 #include <blobDetection.h>
 
 #if !(defined (OV2640_MINI_2MP_PLUS))
@@ -29,6 +30,10 @@ bool serialOut = false;
 
 TrackerState tracker;
 
+Servo SERVOH;
+Servo SERVOV;
+float Kp = 0.05;
+
 inline void setPixelMask(int x, int y, bool value) {
   int bitIndex = y * pixelWidth + x;
   int byteIndex = bitIndex / 8;
@@ -52,6 +57,22 @@ std::vector<Blob> blobs;
 bool targetSet = false;
 int persistanceFrames = 3;
 
+// FIX
+void trackServo(Pixel p) {
+  if(p.x >= 0 && p.y >= 0) {
+    int errorX = p.x - (pixelWidth/2);
+    int errorY = p.y - (pixelHeight/2);
+
+    if(errorX > 5 || errorX < -5) {
+      SERVOH.write(constrain(90 + errorX * Kp, 0, 180));
+    }
+
+    if(errorY > 5 || errorY < -5) {
+      SERVOV.write(constrain(90 + errorY * Kp, 0, 180));
+    }
+  }
+}
+
 
 void printMask() {
   for (int y = 0; y < pixelHeight; y++) {
@@ -71,7 +92,7 @@ bool isTargetColour(uint16_t rgb565) {
   g = (g * 255) / 63;
   b = (b * 255) / 31;
 
-  if (r > 150 && r < 255 && g > 100 && g < 255 && b < 100) {
+  if (r < 50 && g < 100 && b < 255 && b < 100) {
     return true;
   }
   return false;
@@ -117,6 +138,8 @@ void sendRGB565() {
   }
 
   Pixel p = trackBlob(blobs, blobThreshold, tracker);
+  yield();
+  trackServo(p);
   Serial.print("X:");
   Serial.print(p.x);
   Serial.print(" Y:");
@@ -170,6 +193,9 @@ void captureFrameWithThreshold() {
 void setup() {
   uint8_t vid, pid;
   uint8_t temp;
+
+  SERVOH.attach(15);
+  SERVOV.attach(14);
 
   Wire.begin();
   Serial.begin(921600);

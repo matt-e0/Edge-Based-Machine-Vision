@@ -21,8 +21,8 @@ int lastCentroidX = -1;
 int lastCentroidY = -1;
 int tempID = 0;
 int lastPixelCount = 0;
-int pixelCountThreshold = 6;
-float circleThreshold = 1.4;
+int pixelCountThreshold = 20;
+float circleThreshold = 10;
 int blobThreshold = 15;
 
 
