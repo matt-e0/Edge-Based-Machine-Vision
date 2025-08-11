@@ -6,6 +6,7 @@
 #include <memorysaver.h>
 #include <Servo.h>
 #include <blobDetection.h>
+#include <camera.h>
 
 #if !(defined (OV2640_MINI_2MP_PLUS))
 #error Enable OV2640_MINI_2MP_PLUS in memorysaver.h
@@ -13,62 +14,34 @@
 
 #define CS_PIN 10
 
+// Camera module setup
 ArduCAM myCAM(OV2640, CS_PIN);
-constexpr uint8_t pixelWidth = 160;
-constexpr uint8_t pixelHeight = 120;
+uint8_t mask[bitmaskSize]; // 1D bit array 
 
-constexpr int bitmaskSize = (pixelWidth * pixelHeight + 7) / 8;
-uint8_t mask[bitmaskSize]; // 1D bit array
+// Debug
+//const uint32_t expectedLength = (pixelWidth * pixelHeight * 2) + 8;
 
-const uint8_t startByte[] = { 0xAA, 0x55, 0xAA, 0x55 };
-const uint8_t endByte[]   = { 0x55, 0xAA, 0x55, 0xAA };
-
-const int chunkSize = 64; 
-uint8_t sendBuffer[chunkSize];
-int bufIndex = 0;
-bool serialOut = false;
-
+// Blob
 TrackerState tracker;
-
-Servo SERVOH;
-Servo SERVOV;
-
-// Adjustable parameters
-const int centerX = pixelWidth / 2;
-const int centerY = pixelHeight / 2;
-const int deadzone = 5;    // pixels before servo moves
-const float Kp = 0.3;      // gain factor
-const bool invertX = true; // flip horizontal direction
-const bool invertY = false; // flip vertical direction
-
-// Static variables to keep servo positions between calls
-static int servoHPos = 90;
-static int servoVPos = 90;
-
-inline void setPixelMask(int x, int y, bool value) {
-  int bitIndex = y * pixelWidth + x;
-  int byteIndex = bitIndex / 8;
-  int bitOffset = bitIndex % 8;
-
-  if (value)
-    mask[byteIndex] |= (1 << bitOffset);
-  else
-    mask[byteIndex] &= ~(1 << bitOffset);
-}
-/*
-inline bool getPixelMask(int x, int y) {
-  int bitIndex = y * pixelWidth + x;
-  int byteIndex = bitIndex / 8;
-  int bitOffset = bitIndex % 8;
-  return (mask[byteIndex] >> bitOffset) & 1;
-}
-*/
-
 std::vector<Blob> blobs;
 bool targetSet = false;
 int persistanceFrames = 3;
 
-// FIX
+// Servo paramters
+Servo SERVOH;
+Servo SERVOV;
+
+const int centerX = pixelWidth / 2;
+const int centerY = pixelHeight / 2;
+const int deadzone = 5;
+const float Kp = 0.1;
+const bool invertX = true; 
+const bool invertY = false; 
+// Start position
+static int servoHPos = 90;
+static int servoVPos = 90;
+
+
 void trackServo(Pixel p) {
   if (p.x >= 0 && p.y >= 0) {
       int errorX = p.x - centerX;
@@ -77,7 +50,7 @@ void trackServo(Pixel p) {
       if (invertX) errorX = -errorX;
       if (invertY) errorY = -errorY;
 
-      // Move only if error is outside deadzone
+      // Check for deviation
       if (abs(errorX) > deadzone) {
           servoHPos += errorX * Kp;
           servoHPos = constrain(servoHPos, 0, 180);
@@ -92,15 +65,17 @@ void trackServo(Pixel p) {
     }
 }
 
+inline void setPixelMask(int x, int y, bool value) {
+  int bitIndex = y * pixelWidth + x;
+  int byteIndex = bitIndex / 8;
+  int bitOffset = bitIndex % 8;
 
-void printMask() {
-  for (int y = 0; y < pixelHeight; y++) {
-    for (int x = 0; x < pixelWidth; x++) {
-      Serial.print(getPixelMask(x, y, mask, pixelWidth) ? "1" : "0");
-    }
-    Serial.println();
-  }
+  if (value)
+    mask[byteIndex] |= (1 << bitOffset);
+  else
+    mask[byteIndex] &= ~(1 << bitOffset);
 }
+
 
 bool isTargetColour(uint16_t rgb565) {
   uint8_t r = (rgb565 >> 11) & 0x1F;
@@ -120,48 +95,28 @@ bool isTargetColour(uint16_t rgb565) {
 }
 
 void sendRGB565() {
-  if (serialOut) {
-    while (Serial.availableForWrite() < 2) yield();
-    Serial.write(startByte, sizeof(startByte));
-  }
-
-  // Read, threshold, and send
+  initializeFrame();
+  // Read image pixel by pixel 
   for (int y = 0; y < pixelHeight; y++) {
     for (int x = 0; x < pixelWidth; x++) {
+      // rgb565 format is 2 bytes long
+      // The HI byte is the most important, containing 5 red bits and 3 green bits, LO 3 green and 5 blue
+      // Each pixel is read byte by byte
       uint8_t high = SPI.transfer(0x00);
       uint8_t low = SPI.transfer(0x00);
       uint16_t pixel565 = (high << 8) | low;
 
       setPixelMask(x, y, isTargetColour(pixel565));
-
-      if (serialOut) {
-        sendBuffer[bufIndex++] = low;
-        sendBuffer[bufIndex++] = high;
-
-        if (bufIndex >= chunkSize) {
-          while (Serial.availableForWrite() < bufIndex) yield();
-          Serial.write(sendBuffer, bufIndex);
-          bufIndex = 0;
-        }
-      }
-
+      
+      readBytes(low, high);
     }
   }
 
-  if (bufIndex > 0 && serialOut) {
-    while (Serial.availableForWrite() < bufIndex) yield();
-    Serial.write(sendBuffer, bufIndex);
-  }
+  flushBuffer();
 
-  if (serialOut) {
-    while (Serial.availableForWrite() < 2) yield();
-    Serial.write(endByte, sizeof(endByte));
-    Serial.flush();  // Waits until all data is sent
-  }
+  endFrame(); 
   
-  myCAM.CS_HIGH();
-  
-
+  myCAM.CS_HIGH(); 
   Serial.println("\nImage sent!");
   yield();
 }
@@ -186,20 +141,23 @@ void captureFrameWithThreshold() {
 
   Serial.println("Capture done!");
 
+  /* DEBUG
   uint32_t length = myCAM.read_fifo_length();
-  const uint32_t expectedLength = (pixelWidth * pixelHeight * 2) + 8;
+  
 
   if (length != expectedLength) {
     Serial.print("Unexpected image length: ");
     Serial.println(length);
+    Serial.println(expectedLength);
     return;
   }
+  */
 
   myCAM.CS_LOW();
   myCAM.set_fifo_burst();
 
   sendRGB565();
-  printMask();
+  //printMask(); // Needed for getMask.py, can be commented out
   delay(50);  // Optional pacing
 }
 
@@ -255,8 +213,9 @@ void setup() {
 
   // Initialize camera
   myCAM.set_format(BMP);
+  //myCAM.OV2640_set_Brightness();
   myCAM.InitCAM();
-  myCAM.OV2640_set_JPEG_size(OV2640_160x120);
+  myCAM.OV2640_set_JPEG_size(OV2640_320x240);
   myCAM.clear_fifo_flag();
 
   delay(50);

@@ -15,36 +15,6 @@ int tempID = 0;
 float circleThreshold = 10;
 int blobThreshold = 15;
 
-/*
-Pixel trackBlob(const std::vector<Blob> &blobs, int blobThreshold, TrackerState &state) {
-    for (const Blob &target : blobs) {
-        // Size match check
-        int currentX = std::round(target.centreX);
-        int currentY = std::round(target.centreY);
-
-        // Position match check
-        if (currentX > state.lastCentroidX - blobThreshold &&
-            currentX < state.lastCentroidX + blobThreshold &&
-            currentY > state.lastCentroidY - blobThreshold &&
-            currentY < state.lastCentroidY + blobThreshold) {
-
-            // Update tracker state
-            state.lastCentroidX = currentX;
-            state.lastCentroidY = currentY;
-            //state.lastPixelCount = target.pixelCount;
-            return { currentX, currentY };
-        }
-    
-    }
-
-    // If no match, clear tracking
-    state.lastCentroidX = -1;
-    state.lastCentroidY = -1;
-    //state.lastPixelCount = 0;
-    return { -1, -1 };
-}
-*/
-
 Pixel trackBlob(const std::vector<Blob> &blobs, int blobThreshold, TrackerState &state) {
     if (!blobs.empty()) {
         // Try to match the last position first
@@ -99,7 +69,6 @@ void setCurrentTarget(std::vector<Blob> &blobs, bool &targetSet, TrackerState &s
 
 
 void detectBlobs(int pixelHeight, int pixelWidth, uint8_t mask[], std::vector<Blob> &blobs) {
-    //int persistanceFrames = 3;
     blobs.clear();
     std::vector<Pixel> queue; // BFS queue
     queue.reserve(pixelWidth * pixelHeight);
