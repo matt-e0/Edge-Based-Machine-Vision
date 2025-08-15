@@ -1,10 +1,10 @@
 #include <stdint.h>
 
-constexpr bool serialOut = true;
+constexpr bool serialOut = false;
 
 // Camera resolution
-constexpr uint16_t pixelWidth = 320;
-constexpr uint16_t pixelHeight = 140;
+constexpr uint16_t pixelWidth = 160;
+constexpr uint16_t pixelHeight = 120;
 
 // Image mask
 constexpr int bitmaskSize = (pixelWidth * pixelHeight + 7) / 8;

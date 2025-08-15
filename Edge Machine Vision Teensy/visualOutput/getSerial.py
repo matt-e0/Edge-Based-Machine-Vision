@@ -1,5 +1,6 @@
 
 import serial
+import time
 import cv2
 import numpy as np
 
@@ -7,10 +8,20 @@ PORT = 'COM3'
 BAUD = 921600 
 START_MARKER = b'\xAA\x55\xAA\x55'
 END_MARKER = b'\x55\xAA\x55\xAA'
-WIDTH = 320
-HEIGHT = 140
+WIDTH = 160
+HEIGHT = 120
 BYTES_PER_PIXEL = 2  # RGB565
 EXPECTED_SIZE = WIDTH * HEIGHT * BYTES_PER_PIXEL
+
+def open_serial():
+    while True:
+        try:
+            ser = serial.Serial(PORT, BAUD, timeout=5)
+            print(f"Connected to {PORT} at {BAUD} baud.")
+            return ser
+        except serial.SerialException:
+            print(f"⚠️ Could not open {PORT}. Waiting...")
+            time.sleep(1)  # wait before retrying
 
 def rgb565_to_rgb888(rgb565_bytes):
     if len(rgb565_bytes) != 2:
@@ -75,24 +86,31 @@ def read_frame(ser):
 
     return frame_rgb888
 
+
 def main():
-    with serial.Serial(PORT, BAUD, timeout=5) as ser:
-        while True:
+    ser = open_serial()
+
+    while True:
+        try:
             frame_rgb888 = read_frame(ser)
             if frame_rgb888 is None:
                 continue
 
-            # Convert list of tuples to NumPy array
             frame_array = np.array(frame_rgb888, dtype=np.uint8).reshape((HEIGHT, WIDTH, 3))
-            frame_array_bgr = frame_array[..., ::-1]  # RGB to BGR
-            scaled_frame = cv2.resize(frame_array_bgr, (0, 0), fx=4.0, fy=4.0)  
+            frame_array_bgr = frame_array[..., ::-1]
+            scaled_frame = cv2.resize(frame_array_bgr, (0, 0), fx=4.0, fy=4.0)
             cv2.imshow('Live Frame', scaled_frame)
 
-            # Exit on ESC key
             if cv2.waitKey(1) & 0xFF == 27:
                 break
 
-        cv2.destroyAllWindows()
+        except (serial.SerialException, OSError) as e:
+            print(f"⚠️ Serial connection lost: {e}")
+            ser.close()
+            ser = open_serial()  # Reconnect
+
+    cv2.destroyAllWindows()
+    ser.close()
 
 if __name__ == "__main__":
     main()

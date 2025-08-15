@@ -34,7 +34,8 @@ Servo SERVOV;
 const int centerX = pixelWidth / 2;
 const int centerY = pixelHeight / 2;
 const int deadzone = 5;
-const float Kp = 0.1;
+const float KpH = 0.1;
+const float KpV = 0.1;
 const bool invertX = true; 
 const bool invertY = false; 
 // Start position
@@ -52,13 +53,13 @@ void trackServo(Pixel p) {
 
       // Check for deviation
       if (abs(errorX) > deadzone) {
-          servoHPos += errorX * Kp;
+          servoHPos += errorX * KpH;
           servoHPos = constrain(servoHPos, 0, 180);
           SERVOH.write(servoHPos);
       }
 
       if (abs(errorY) > deadzone) {
-          servoVPos += errorY * Kp;
+          servoVPos += errorY * KpV;
           servoVPos = constrain(servoVPos, 0, 180);
           SERVOV.write(servoVPos);
       }
@@ -86,9 +87,10 @@ bool isTargetColour(uint16_t rgb565) {
   g = (g * 255) / 63;
   b = (b * 255) / 31;
 
-  if ((r >100 && r < 255) &&
-      (g > 0 && g < 30) &&
-      (b > 0 && b < 30)) {
+  if ((r > 110 && r < 255) &&
+      (g > 0 && g < 60) &&
+      (b > 0 && b < 90)&&
+      (abs(g - b) < 30)) {
     return true;
   }
   return false;
@@ -117,33 +119,45 @@ void sendRGB565() {
   endFrame(); 
   
   myCAM.CS_HIGH(); 
-  Serial.println("\nImage sent!");
+  //Serial.println("\nImage sent!");
   yield();
 }
 
 
 void captureFrameWithThreshold() {
 
-  while (Serial.availableForWrite() < 2) yield();
   myCAM.flush_fifo();
   myCAM.clear_fifo_flag();
   myCAM.start_capture();
-  Serial.println("Capturing...");
+  //Serial.println("Capturing...");
 
   // Wait until capture is done
   uint32_t startTime = millis();
   while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK)) {
     if (millis() - startTime > 2000) {
-      Serial.println("Capture timeout.");
+      //Serial.println("Capture timeout.");
       return;
     }
   }
 
-  Serial.println("Capture done!");
+  //Serial.println("Capture done!");
 
   /* DEBUG
   uint32_t length = myCAM.read_fifo_length();
+  uint32_t start = micros();
+// Code section
+Serial.printf("Time: %lu us\n", micros() - start);
   
+Bulk transfer serial instead of using serial.write()
+Use fixed-point math instead of floats where possible
+check build flags
+Use CMSIS-DSP library for fast convolution, FFT, filtering.
+Use DMAMEM for large frame buffers to keep them off the tightly coupled RAM.
+Ensure arrays are static or global to avoid stack overflows
+Find a way to perform parallelism/pipelining
+THink of cropping the image after lock?
+RTOS?
+
 
   if (length != expectedLength) {
     Serial.print("Unexpected image length: ");
@@ -158,7 +172,7 @@ void captureFrameWithThreshold() {
 
   sendRGB565();
   //printMask(); // Needed for getMask.py, can be commented out
-  delay(50);  // Optional pacing
+  delay(20);  // Optional pacing
 }
 
 
@@ -213,12 +227,15 @@ void setup() {
 
   // Initialize camera
   myCAM.set_format(BMP);
-  //myCAM.OV2640_set_Brightness();
   myCAM.InitCAM();
-  myCAM.OV2640_set_JPEG_size(OV2640_320x240);
+  //myCAM.OV2640_set_Brightness(Brightness2);
+  //myCAM.OV2640_set_Color_Saturation(2);
+  //myCAM.OV2640_set_Light_Mode(Auto);
+  //myCAM.OV2640_set_Contrast(1);
+  myCAM.OV2640_set_JPEG_size(OV2640_160x120);
   myCAM.clear_fifo_flag();
 
-  delay(50);
+  delay(10);
 }
 
 void loop() {
@@ -238,10 +255,10 @@ void loop() {
 
         Pixel p = trackBlob(blobs, blobThreshold, tracker);
 
-        Serial.print("X:");
-        Serial.print(p.x);
-        Serial.print(" Y:");
-        Serial.println(p.y);
+        //Serial.print("X:");
+        //Serial.print(p.x);
+        //Serial.print(" Y:");
+        //Serial.println(p.y);
 
         if (p.x == -1 && p.y == -1) {
             persistanceFrames--;
@@ -256,7 +273,7 @@ void loop() {
         else {
             yield();
             trackServo(p);
-            persistanceFrames = 3; // Reset if tracking successful
+            persistanceFrames = 5; // Reset if tracking successful
         }
     }
 }

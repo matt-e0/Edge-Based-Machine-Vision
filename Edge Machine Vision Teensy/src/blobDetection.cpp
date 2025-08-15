@@ -13,7 +13,7 @@ int lastCentroidX = -1;
 int lastCentroidY = -1;
 int tempID = 0;
 float circleThreshold = 10;
-int blobThreshold = 15;
+int blobThreshold = 25;
 
 Pixel trackBlob(const std::vector<Blob> &blobs, int blobThreshold, TrackerState &state) {
     if (!blobs.empty()) {
@@ -54,9 +54,7 @@ void setCurrentTarget(std::vector<Blob> &blobs, bool &targetSet, TrackerState &s
     targetSet = false;
     for (Blob &target : blobs) {
         if (target.pixelCount > 3 &&
-            target.sumY != 0 && target.sumX != 0 &&
-            (float(target.sumX) / target.sumY < circleThreshold) &&
-            (float(target.sumY) / target.sumX < circleThreshold)) {
+            target.sumY != 0 && target.sumX != 0) {
 
             targetSet = true;
             //state.lastPixelCount = target.pixelCount;

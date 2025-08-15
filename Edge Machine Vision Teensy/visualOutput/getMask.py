@@ -6,7 +6,7 @@ import sys
 SERIAL_PORT = 'COM3'
 BAUD_RATE = 921600
 
-WIDTH, HEIGHT = 320, 140
+WIDTH, HEIGHT = 160, 120
 PIXEL_SIZE = 4  # scale factor for display window
 
 def main():
