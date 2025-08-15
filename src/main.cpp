@@ -7,6 +7,7 @@
 #include <Servo.h>
 #include <blobDetection.h>
 #include <camera.h>
+#include <DMAChannel.h>
 
 #if !(defined (OV2640_MINI_2MP_PLUS))
 #error Enable OV2640_MINI_2MP_PLUS in memorysaver.h
@@ -17,6 +18,44 @@
 // Camera module setup
 ArduCAM myCAM(OV2640, CS_PIN);
 uint8_t mask[bitmaskSize]; // 1D bit array 
+
+// DMA
+DMAChannel dma;
+volatile bool dmaDone = false;
+const int bufferSize = 100;
+uint8_t dmaBuffer[bufferSize];
+// Two buffers for double buffering
+uint8_t bufferA[pixelWidth * 2];
+uint8_t bufferB[pixelWidth * 2];
+// Current DMA buffer pointer
+uint8_t* processBuffer;
+
+
+void dmaComplete() {
+  dmaDone = true;
+}
+
+
+void setupDMA() {
+    dma.source((volatile uint8_t&)IMXRT_LPSPI4_S.RDR);      // SPI RX register
+    dma.triggerAtHardwareEvent(DMAMUX_SOURCE_LPSPI4_RX);    // Trigger on SPI RX
+    dma.interruptAtCompletion();
+    dma.attachInterrupt(dmaComplete);
+}
+
+void startDMATransfer(uint8_t* buffer, size_t length) {
+    dma.destinationBuffer(buffer, length);
+    dmaDone = false;
+    dma.enable();
+    myCAM.set_fifo_burst();
+
+    // Start SPI clocking to read data — might require sending dummy bytes
+    for (size_t i = 0; i < length; i++) {
+      while (!(IMXRT_LPSPI4_S.SR & LPSPI_SR_TDF)) {}
+      IMXRT_LPSPI4_S.TDR = 0x00; // push dummy byte
+    }
+}
+
 
 // Debug
 //const uint32_t expectedLength = (pixelWidth * pixelHeight * 2) + 8;
@@ -123,6 +162,41 @@ void sendRGB565() {
   yield();
 }
 
+void sendRGB565_DMA() {
+    initializeFrame();
+    myCAM.CS_LOW();
+
+    setupDMA();
+
+    // Start DMA on first line
+    startDMATransfer(bufferA, sizeof(bufferA));
+
+    for (int y = 0; y < pixelHeight; y++) {
+        // Wait for DMA to complete
+        while (!dmaDone) {}
+
+        // Set processBuffer to the buffer that just finished
+        processBuffer = (y % 2 == 0) ? bufferA : bufferB;
+
+        // Start next DMA transfer on the other buffer if not last line
+        if (y < pixelHeight - 1) {
+            startDMATransfer((y % 2 == 0) ? bufferB : bufferA, sizeof(bufferA));
+        }
+
+        // Process pixels
+        uint16_t* p = (uint16_t*)processBuffer;
+        for (int x = 0; x < pixelWidth; x++) {
+            uint16_t pixel565 = __builtin_bswap16(*p++);
+            setPixelMask(x, y, isTargetColour(pixel565));
+            readBytes(pixel565 & 0xFF, pixel565 >> 8);
+        }
+    }
+
+    flushBuffer();
+    endFrame();
+    myCAM.CS_HIGH();
+    yield();
+}
 
 void captureFrameWithThreshold() {
 
@@ -170,7 +244,7 @@ RTOS?
   myCAM.CS_LOW();
   myCAM.set_fifo_burst();
 
-  sendRGB565();
+  sendRGB565_DMA();
   //printMask(); // Needed for getMask.py, can be commented out
   delay(20);  // Optional pacing
 }
