@@ -2,12 +2,6 @@
 #include <stdint.h>
 #include <cmath>
 #include <algorithm>
-// PLAN
-/*
-Check through each pixel in the mask to see if has been assigned to a blob
-if not perform a BFS O(N) instead of checking every pixel again O(n^2)
-*/
-
 
 int lastCentroidX = -1;
 int lastCentroidY = -1;
@@ -68,7 +62,7 @@ void setCurrentTarget(std::vector<Blob> &blobs, bool &targetSet, TrackerState &s
 
 void detectBlobs(int pixelHeight, int pixelWidth, uint8_t mask[], std::vector<Blob> &blobs) {
     blobs.clear();
-    std::vector<Pixel> queue; // BFS queue
+    std::vector<Pixel> queue; // DFS stack
     queue.reserve(pixelWidth * pixelHeight);
 
     for (int y = 0; y < pixelHeight; y++) {
@@ -119,9 +113,10 @@ void detectBlobs(int pixelHeight, int pixelWidth, uint8_t mask[], std::vector<Bl
                 // Compute centroid
                 blob.centreX = (float)blob.sumX / blob.pixelCount;
                 blob.centreY = (float)blob.sumY / blob.pixelCount;
-
-                blobs.push_back(blob);
-            
+                // Only push large blobs
+                if (blob.pixelCount > 4) {
+                    blobs.push_back(blob);
+                }
             }
         }
     }

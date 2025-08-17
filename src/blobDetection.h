@@ -2,6 +2,7 @@
 #include <vector>
 
 
+
 extern int blobThreshold; // Maximum deviation for blob tracking (pixels)
 
 struct Blob {
@@ -22,18 +23,14 @@ struct TrackerState {
     int lastPixelCount = 0;
 };
 
-inline bool getPixelMask(int x, int y, const uint8_t mask[], int pixelWidth) {
-  int bitIndex = y * pixelWidth + x;
-  int byteIndex = bitIndex / 8;
-  int bitOffset = bitIndex % 8;
-  return (mask[byteIndex] >> bitOffset) & 1;
+inline bool getPixelMask(int x, int y, const uint8_t* mask, int pixelWidth) {
+  int idx = y * pixelWidth + x; // Linear index
+  return (mask[idx >> 3] >> (idx & 7)) & 1; // idx>>3 gets the byte and idx&7 getss the bit from that byte
 }
 
-inline void clearPixelMask(int x, int y, uint8_t mask[], int pixelWidth) {
-    int bitIndex  = y * pixelWidth + x;
-    int byteIndex = bitIndex >> 3;
-    int bitOffset = bitIndex & 7;
-    mask[byteIndex] &= ~(1 << bitOffset); // Set bit to 0
+inline void clearPixelMask(int x, int y, uint8_t* mask, int pixelWidth) {
+    int idx = y * pixelWidth + x; // Linear index
+    mask[idx >> 3] &= ~(1 << (idx & 7));
 }
 
 void detectBlobs(int pixelHeight, int pixelWidth, uint8_t mask[], std::vector<Blob> &blobs);
